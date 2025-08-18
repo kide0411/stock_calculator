@@ -49,8 +49,10 @@ def calculate_profit(b_price, s_price, shares, fee_discount, trade_type, trade_d
 
 # --- 生成表格函數 (報酬率加 % 單位) ---
 def generate_table(base_prices):
+    # 依賣出價格排序
+    base_prices_sorted = sorted(base_prices)
     data = []
-    for s_price in base_prices:
+    for s_price in base_prices_sorted:
         fee, tax, profit, roi = calculate_profit(buy_price, s_price, shares, fee_discount, trade_type, trade_direction)
         data.append([buy_price, s_price, tax, fee, profit, f"{roi}%"])
     return pd.DataFrame(data, columns=["買入價格","賣出價格","證交稅","總手續費","獲利","報酬率"])
@@ -58,22 +60,20 @@ def generate_table(base_prices):
 # --- 延伸價格函數 (動態跳動單位) ---
 def add_upper_prices():
     last_max = max(st.session_state.base_prices, default=buy_price)
-    new_prices = []
     current_price = last_max
     for _ in range(5):
         step = get_price_step(current_price)
         current_price += step
-        new_prices.append(current_price)
-    st.session_state.base_prices.extend(new_prices)
+        st.session_state.base_prices.append(current_price)
 
 def add_lower_prices():
     last_min = min(st.session_state.base_prices, default=buy_price)
-    new_prices = []
     current_price = last_min
+    new_prices = []
     for _ in range(5):
         step = get_price_step(current_price)
         current_price -= step
-        new_prices.insert(0, current_price)
+        new_prices.append(current_price)
     st.session_state.base_prices = new_prices + st.session_state.base_prices
 
 # --- 按鈕操作 ---
