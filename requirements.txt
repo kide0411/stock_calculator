@@ -1,1 +1,2 @@
-streamlit run stock_calculator.py
+streamlit>=1.25.0
+pandas>=2.0.0
