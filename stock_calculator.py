@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import math  # 用來無條件捨去
 
 st.title("價格區間模擬交易計算")
 
@@ -20,16 +21,16 @@ if "base_prices" not in st.session_state or st.session_state.get("buy_price", 0)
 if "price_step" not in st.session_state:
     st.session_state.price_step = price_step
 
-# --- 計算利潤函數 ---
+# --- 計算利潤函數 (無條件捨去) ---
 def calculate_profit(b_price, s_price, shares, fee_discount, trade_type, trade_direction):
     fee_rate = 0.001425
     tax_rate = 0.0015 if trade_type == "當沖" else 0.003
     buy_amount = b_price * shares
     sell_amount = s_price * shares
-    fee = max((buy_amount + sell_amount) * fee_rate * (fee_discount / 10), 20)
-    tax = sell_amount * tax_rate if trade_direction == "做多" else buy_amount * tax_rate
-    profit = sell_amount - buy_amount - fee - tax
-    roi = (profit / buy_amount) * 100
+    fee = math.floor(max((buy_amount + sell_amount) * fee_rate * (fee_discount / 10), 20))
+    tax = math.floor(sell_amount * tax_rate) if trade_direction == "做多" else math.floor(buy_amount * tax_rate)
+    profit = math.floor(sell_amount - buy_amount - fee - tax)
+    roi = math.floor((profit / buy_amount) * 100)
     return fee, tax, profit, roi
 
 # --- 生成表格函數 ---
@@ -49,7 +50,7 @@ def add_lower_prices():
     last_min = min(st.session_state.base_prices, default=buy_price)
     st.session_state.base_prices = [last_min - i * st.session_state.price_step for i in range(5,0,-1)] + st.session_state.base_prices
 
-# --- 按鈕操作：直接更新 session_state ---
+# --- 按鈕操作 ---
 col1, col2 = st.columns(2)
 with col1:
     if st.button("更多上方價格"):
