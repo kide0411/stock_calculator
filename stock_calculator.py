@@ -26,21 +26,14 @@ def get_price_step(price):
     else:
         return 5
 
-def round_price(price):
-    step = get_price_step(price)
-    return round(price / step) * step
-
 price_step = get_price_step(buy_price)
 st.write(f"依股價設定跳動單位: {price_step} 元")
 
 # --- 初始化 session_state ---
 if "base_prices" not in st.session_state or st.session_state.get("buy_price", 0) != buy_price:
-    st.session_state.base_prices = [round_price(buy_price + i * price_step) for i in range(1, 6)] + \
-                                   [round_price(buy_price - i * price_step) for i in range(5, 0, -1)]
+    st.session_state.base_prices = [buy_price + i * price_step for i in range(1, 6)] + \
+                                   [buy_price - i * price_step for i in range(5, 0, -1)]
     st.session_state.buy_price = buy_price
-
-if "price_step" not in st.session_state:
-    st.session_state.price_step = price_step
 
 # --- 計算利潤函數 (無條件捨去) ---
 def calculate_profit(b_price, s_price, shares, fee_discount, trade_type, trade_direction):
@@ -58,21 +51,30 @@ def calculate_profit(b_price, s_price, shares, fee_discount, trade_type, trade_d
 def generate_table(base_prices):
     data = []
     for s_price in base_prices:
-        s_price = round_price(s_price)
         fee, tax, profit, roi = calculate_profit(buy_price, s_price, shares, fee_discount, trade_type, trade_direction)
         data.append([buy_price, s_price, tax, fee, profit, f"{roi}%"])
     return pd.DataFrame(data, columns=["買入價格","賣出價格","證交稅","總手續費","獲利","報酬率"])
 
-# --- 延伸價格函數 (依跳動單位 + 四捨五入) ---
+# --- 延伸價格函數 (動態跳動單位) ---
 def add_upper_prices():
     last_max = max(st.session_state.base_prices, default=buy_price)
-    step = get_price_step(last_max)
-    st.session_state.base_prices.extend([round_price(last_max + i * step) for i in range(1,6)])
+    new_prices = []
+    current_price = last_max
+    for _ in range(5):
+        step = get_price_step(current_price)
+        current_price += step
+        new_prices.append(current_price)
+    st.session_state.base_prices.extend(new_prices)
 
 def add_lower_prices():
     last_min = min(st.session_state.base_prices, default=buy_price)
-    step = get_price_step(last_min)
-    st.session_state.base_prices = [round_price(last_min - i * step) for i in range(5,0,-1)] + st.session_state.base_prices
+    new_prices = []
+    current_price = last_min
+    for _ in range(5):
+        step = get_price_step(current_price)
+        current_price -= step
+        new_prices.insert(0, current_price)
+    st.session_state.base_prices = new_prices + st.session_state.base_prices
 
 # --- 按鈕操作 ---
 col1, col2 = st.columns(2)
