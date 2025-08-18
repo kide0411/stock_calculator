@@ -18,6 +18,7 @@ if "base_prices" not in st.session_state:
 if "price_step" not in st.session_state:
     st.session_state.price_step = price_step
 
+# --- 計算利潤函數 ---
 def calculate_profit(b_price, s_price, shares, fee_discount, trade_type, trade_direction):
     fee_rate = 0.001425
     tax_rate = 0.0015 if trade_type == "當沖" else 0.003
@@ -29,6 +30,7 @@ def calculate_profit(b_price, s_price, shares, fee_discount, trade_type, trade_d
     roi = (profit / buy_amount) * 100
     return fee, tax, profit, roi
 
+# --- 生成表格函數 ---
 def generate_table(base_prices):
     data = []
     for s_price in base_prices:
@@ -41,19 +43,26 @@ df = generate_table(st.session_state.base_prices)
 st.subheader("價格區間模擬結果")
 st.dataframe(df)
 
+# --- 延伸價格函數 ---
+def add_upper_prices():
+    last_max = max(st.session_state.base_prices)
+    new_prices = [last_max + i * st.session_state.price_step for i in range(1,6)]
+    st.session_state.base_prices.extend(new_prices)
+
+def add_lower_prices():
+    last_min = min(st.session_state.base_prices)
+    new_prices = [last_min - i * st.session_state.price_step for i in range(5,0,-1)]
+    st.session_state.base_prices = new_prices + st.session_state.base_prices
+
 # --- 延伸按鈕 ---
 col1, col2 = st.columns(2)
 
 with col1:
     if st.button("更多上方價格"):
-        last_max = max(st.session_state.base_prices)
-        new_prices = [last_max + i * st.session_state.price_step for i in range(1,6)]
-        st.session_state.base_prices.extend(new_prices)
+        add_upper_prices()
         st.experimental_rerun()
 
 with col2:
     if st.button("更多下方價格"):
-        last_min = min(st.session_state.base_prices)
-        new_prices = [last_min - i * st.session_state.price_step for i in range(5,0,-1)]
-        st.session_state.base_prices = new_prices + st.session_state.base_prices
+        add_lower_prices()
         st.experimental_rerun()
