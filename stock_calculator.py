@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
-import math  # 用來無條件捨去
+import math
+from decimal import Decimal, getcontext
+
+getcontext().prec = 12  # 避免浮點誤差
 
 st.title("價格區間模擬交易計算")
 
@@ -11,81 +14,46 @@ buy_price = st.number_input("買入價格 / 賣出價格", min_value=0.01, value
 shares = st.number_input("股數", min_value=1, value=1000)
 fee_discount = st.number_input("手續費折數（預設2.8折）", min_value=0.1, max_value=10.0, value=2.8, format="%.2f")
 
-# --- 判斷跳動單位 ---
-def get_price_step(price):
-    if price < 10:
-        return 0.01
-    elif price < 50:
-        return 0.05
-    elif price < 100:
-        return 0.1
-    elif price < 500:
-        return 0.5
-    elif price < 1000:
-        return 1
+# --- 依規則回傳 tick ---
+def get_tick(dprice: Decimal) -> Decimal:
+    if dprice < Decimal('10'):
+        return Decimal('0.01')
+    elif dprice < Decimal('50'):
+        return Decimal('0.05')
+    elif dprice < Decimal('100'):
+        return Decimal('0.1')
+    elif dprice < Decimal('500'):
+        return Decimal('0.5')
+    elif dprice < Decimal('1000'):
+        return Decimal('1')
     else:
-        return 5
+        return Decimal('5')
 
-price_step = get_price_step(buy_price)
-st.write(f"依股價設定跳動單位: {price_step} 元")
+# 取得「下一個向上/向下」價格（重點：邊界用下一步的區間判斷）
+def next_up(dprice: Decimal) -> Decimal:
+    step = get_tick(dprice)  # 向上時，使用當前價位的 tick（例如 9.99 -> +0.01 到 10.00；10.00 之後用 0.05）
+    return dprice + step
 
-# --- 初始化 session_state ---
-if "base_prices" not in st.session_state or st.session_state.get("buy_price", 0) != buy_price:
-    st.session_state.base_prices = [buy_price + i * price_step for i in range(1, 6)] + \
-                                   [buy_price - i * price_step for i in range(5, 0, -1)]
-    st.session_state.buy_price = buy_price
+def next_down(dprice: Decimal) -> Decimal:
+    # 向下時，若在邊界（例如 10.00），應使用「下一步會落入的區間」的 tick（<10 -> 0.01）
+    tiny = Decimal('0.0000001')
+    step = get_tick(dprice - tiny)
+    return dprice - step
 
-# --- 計算利潤函數 (無條件捨去) ---
-def calculate_profit(b_price, s_price, shares, fee_discount, trade_type, trade_direction):
-    fee_rate = 0.001425
-    tax_rate = 0.0015 if trade_type == "當沖" else 0.003
-    buy_amount = b_price * shares
-    sell_amount = s_price * shares
-    fee = math.floor(max((buy_amount + sell_amount) * fee_rate * (fee_discount / 10), 20))
-    tax = math.floor(sell_amount * tax_rate) if trade_direction == "做多" else math.floor(buy_amount * tax_rate)
-    profit = math.floor(sell_amount - buy_amount - fee - tax)
-    roi = math.floor((profit / buy_amount) * 100)
-    return fee, tax, profit, roi
+# 顯示目前買入價對應的跳動單位（僅顯示資訊）
+current_tick = get_tick(Decimal(str(buy_price)))
+st.write(f"依股價設定跳動單位（以當前價顯示）：{float(current_tick)} 元")
 
-# --- 生成表格函數 (報酬率加 % 單位) ---
-def generate_table(base_prices):
-    # 依賣出價格排序
-    base_prices_sorted = sorted(base_prices)
-    data = []
-    for s_price in base_prices_sorted:
-        fee, tax, profit, roi = calculate_profit(buy_price, s_price, shares, fee_discount, trade_type, trade_direction)
-        data.append([buy_price, s_price, tax, fee, profit, f"{roi}%"])
-    return pd.DataFrame(data, columns=["買入價格","賣出價格","證交稅","總手續費","獲利","報酬率"])
-
-# --- 延伸價格函數 (動態跳動單位) ---
-def add_upper_prices():
-    last_max = max(st.session_state.base_prices, default=buy_price)
-    current_price = last_max
+# --- 初始化 / 重置價格列表：動態跨區間產生上下各 5 筆 ---
+def build_initial_prices(buy: float):
+    d = Decimal(str(buy))
+    ups, downs = [], []
+    t = d
     for _ in range(5):
-        step = get_price_step(current_price)
-        current_price += step
-        st.session_state.base_prices.append(current_price)
-
-def add_lower_prices():
-    last_min = min(st.session_state.base_prices, default=buy_price)
-    current_price = last_min
-    new_prices = []
+        t = next_up(t)
+        ups.append(float(t))
+    t = d
     for _ in range(5):
-        step = get_price_step(current_price)
-        current_price -= step
-        new_prices.append(current_price)
-    st.session_state.base_prices = new_prices + st.session_state.base_prices
-
-# --- 按鈕操作 ---
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("更多上方價格"):
-        add_upper_prices()
-with col2:
-    if st.button("更多下方價格"):
-        add_lower_prices()
-
-# --- 顯示表格 ---
-df = generate_table(st.session_state.base_prices)
-st.subheader("價格區間模擬結果")
-st.dataframe(df)
+        t = next_down(t)
+        downs.append(float(t))
+    return downs[:]()
