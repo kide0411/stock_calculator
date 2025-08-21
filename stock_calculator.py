@@ -36,10 +36,10 @@ def next_up(price: Decimal) -> Decimal:
 
 def next_down(price: Decimal) -> Decimal:
     tiny = Decimal('0.0000001')
-    step = get_tick(price - tiny)  # 向下要看下一步會落在哪個區間
+    step = get_tick(price - tiny)  # 向下用「下一步會落入區間」的 tick
     return price - step
 
-# --- 初始價區間 ---
+# --- 初始價區間：上下各5筆 + 中間放買入價 ---
 def build_initial_prices(buy: float):
     d = Decimal(str(buy))
     ups, downs = [], []
@@ -51,36 +51,50 @@ def build_initial_prices(buy: float):
     for _ in range(5):
         t = next_down(t)
         downs.append(float(t))
-    return downs[::-1] + [float(buy)] + ups   # 中間加上買入價
+    return downs[::-1] + [float(buy)] + ups
 
 # --- 初始化 session state ---
 if "base_prices" not in st.session_state or st.session_state.get("buy_price") != buy_price:
     st.session_state.base_prices = build_initial_prices(buy_price)
     st.session_state.buy_price = buy_price
 
-# --- 成本/獲利計算 (無條件捨去) ---
+# --- 成本/獲利計算（無條件捨去；做多/做空分流） ---
 def calculate_profit(b_price, s_price, shares, fee_discount, trade_type, trade_direction):
     fee_rate = 0.001425
     tax_rate = 0.0015 if trade_type == "當沖" else 0.003
-    buy_amount = b_price * shares
-    sell_amount = s_price * shares
 
-    fee = math.floor(max((buy_amount + sell_amount) * fee_rate * (fee_discount / 10), 20))
-    tax = math.floor(sell_amount * tax_rate) if trade_direction == "做多" else math.floor(buy_amount * tax_rate)
-    profit = math.floor(sell_amount - buy_amount - fee - tax)
-    roi = math.floor((profit / buy_amount) * 100)
+    # 進出場名目金額（皆用正數）
+    entry_notional = b_price * shares     # 做多：買入金額；做空：進場賣出金額（用輸入價做進場）
+    exit_notional  = s_price * shares     # 做多：賣出金額；做空：出場買回金額
+
+    # 手續費（雙邊），最低20元，無條件捨去
+    fee = math.floor(max((entry_notional + exit_notional) * fee_rate * (fee_discount / 10), 20))
+
+    # 證交稅：只課徵在賣出的一邊
+    if trade_direction == "做多":
+        tax_base = exit_notional          # 做多的賣出在出場
+        profit = exit_notional - entry_notional - fee - math.floor(tax_base * tax_rate)
+    else:  # 做空
+        tax_base = entry_notional         # 做空的賣出在進場
+        profit = entry_notional - exit_notional - fee - math.floor(tax_base * tax_rate)
+
+    profit = math.floor(profit)
+
+    # 報酬率以「進場名目金額」為分母
+    roi = math.floor((profit / entry_notional) * 100)
+    tax = math.floor(tax_base * tax_rate)
     return fee, tax, profit, roi
 
-# --- 生成表格 ---
+# --- 生成表格（含買入價，賣出價排序，報酬率加%） ---
 def generate_table(prices):
-    prices_sorted = sorted(set(prices))  # 去重 & 排序
+    prices_sorted = sorted(set(prices))
     rows = []
     for s_price in prices_sorted:
         fee, tax, profit, roi = calculate_profit(buy_price, s_price, shares, fee_discount, trade_type, trade_direction)
         rows.append([buy_price, s_price, tax, fee, profit, f"{roi}%"])
     return pd.DataFrame(rows, columns=["買入價格","賣出價格","證交稅","總手續費","獲利","報酬率"])
 
-# --- 更多上下價格 ---
+# --- 更多上下價格（逐步跨區間，確保邊界正確） ---
 def add_upper_prices():
     last_max = max(st.session_state.base_prices + [buy_price])
     d = Decimal(str(last_max))
