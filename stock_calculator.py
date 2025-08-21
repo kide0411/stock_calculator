@@ -78,7 +78,7 @@ def calculate_profit(b_price, s_price, shares, fee_discount, trade_type, trade_d
         profit = entry_notional - exit_notional - fee - tax
 
     profit = math.floor(profit)
-    roi = math.floor((profit / entry_notional) * 100)
+    roi = round((profit / entry_notional) * 100, 2)  # 保留兩位小數
 
     return fee, tax, profit, roi
 
@@ -88,7 +88,7 @@ def generate_table(prices):
     rows = []
     for s_price in prices_sorted:
         fee, tax, profit, roi = calculate_profit(buy_price, s_price, shares, fee_discount, trade_type, trade_direction)
-        rows.append([buy_price, s_price, tax, fee, profit, f"{roi}%"])
+        rows.append([buy_price, s_price, tax, fee, profit, f"{roi:.2f}%"])
     return pd.DataFrame(rows, columns=["買入價格","賣出價格","證交稅","總手續費","獲利","報酬率"])
 
 # --- 更多價格 ---
